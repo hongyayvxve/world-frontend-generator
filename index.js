@@ -1,10 +1,9 @@
 // world-frontend-generator/index.js
-// 强制浮动面板版本，不依赖酒馆特定容器
+// 强制浮动面板版本，修复世界书数据获取问题
 
 (function() {
     console.log('世界书前端生成器加载中...');
 
-    // 等待 DOM 加载完成
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
@@ -12,7 +11,6 @@
     }
 
     function init() {
-        // 如果已经存在，先移除旧的
         if (document.getElementById('wfg-float-container')) return;
 
         // 创建悬浮按钮
@@ -57,10 +55,21 @@
         });
         document.body.appendChild(panel);
 
-        // 获取世界书数据
+        // 安全获取世界书列表（总是返回数组）
         function getWorldBooks() {
             const context = window.SillyTavern?.getContext?.() || window;
-            return context.worldInfo?.books || window.world_info || [];
+            let books = context.worldInfo?.books || context.world_info || [];
+            // 如果不是数组，尝试转换成数组
+            if (!Array.isArray(books)) {
+                console.warn('世界书数据不是数组，尝试转换', books);
+                if (books && typeof books === 'object') {
+                    // 可能是对象，取其值
+                    books = Object.values(books);
+                } else {
+                    books = [];
+                }
+            }
+            return books;
         }
 
         // 渲染面板内容
@@ -68,8 +77,10 @@
             const books = getWorldBooks();
             let options = '<option value="">请选择世界书</option>';
             books.forEach(book => {
-                const bookId = book.id || book.name;
-                options += `<option value="${bookId}">${book.name}</option>`;
+                // 确保 book 有 id 或 name
+                const bookId = book.id || book.name || `book_${Math.random()}`;
+                const bookName = book.name || book.id || '未命名世界书';
+                options += `<option value="${bookId}">${bookName}</option>`;
             });
 
             panel.innerHTML = `
@@ -97,13 +108,14 @@
                 <div id="wfg-status" style="margin-top:8px; color:#28a745; font-size:12px;"></div>
             `;
 
-            // 绑定事件
+            // 绑定关闭事件
             document.getElementById('wfg-close').addEventListener('click', () => {
                 panel.style.display = 'none';
             });
 
             let lastHTML = '';
 
+            // 生成按钮事件
             document.getElementById('wfg-generate').addEventListener('click', () => {
                 const select = document.getElementById('wfg-select');
                 const selectedId = select.value;
@@ -115,16 +127,23 @@
 
                 const books = getWorldBooks();
                 const book = books.find(b => (b.id || b.name) === selectedId);
-                if (!book || !book.entries) {
-                    document.getElementById('wfg-status').innerText = '未找到世界书条目';
+                if (!book) {
+                    document.getElementById('wfg-status').innerText = '未找到选中的世界书';
                     document.getElementById('wfg-status').style.color = 'red';
                     return;
                 }
 
-                // 提取关键词
+                // 确保 entries 存在且为数组
+                const entries = book.entries || [];
+                if (!Array.isArray(entries)) {
+                    document.getElementById('wfg-status').innerText = '世界书条目格式错误';
+                    document.getElementById('wfg-status').style.color = 'red';
+                    return;
+                }
+
                 const items = [];
-                book.entries.forEach(entry => {
-                    if (entry.keys && entry.keys.length > 0) {
+                entries.forEach(entry => {
+                    if (entry.keys && Array.isArray(entry.keys) && entry.keys.length > 0) {
                         items.push({
                             keys: entry.keys.join(', '),
                             content: entry.content || ''
@@ -138,10 +157,20 @@
                     return;
                 }
 
-                // 生成HTML卡片
+                // HTML转义函数
+                function escapeHtml(unsafe) {
+                    return unsafe.replace(/[&<>"]/g, function(m) {
+                        if (m === '&') return '&amp;';
+                        if (m === '<') return '&lt;';
+                        if (m === '>') return '&gt;';
+                        if (m === '"') return '&quot;';
+                        return m;
+                    });
+                }
+
                 let generated = `
                     <div style="font-family:Arial,sans-serif; padding:10px; background:#f9f9f9; border-radius:8px;">
-                        <h3 style="margin-top:0;">世界书条目：${escapeHtml(book.name)}</h3>
+                        <h3 style="margin-top:0;">世界书条目：${escapeHtml(book.name || book.id || '未命名')}</h3>
                         <div style="display:flex; flex-wrap:wrap; gap:8px;">
                 `;
                 items.forEach(item => {
@@ -167,11 +196,11 @@
                     const escaped = JSON.stringify(generated);
                     context.executeSlashCommands(`/setvar key=world_frontend_html value=${escaped}`);
                 } else {
-                    // 降级：直接设置全局变量
                     window.world_frontend_html = generated;
                 }
             });
 
+            // 复制按钮事件
             document.getElementById('wfg-copy').addEventListener('click', () => {
                 if (!lastHTML) {
                     document.getElementById('wfg-status').innerText = '没有可复制的内容';
@@ -191,23 +220,12 @@
         // 点击按钮切换面板
         btn.addEventListener('click', () => {
             if (panel.style.display === 'none' || panel.style.display === '') {
-                renderPanel(); // 每次打开时重新渲染（确保数据最新）
+                renderPanel(); // 每次打开重新渲染确保数据最新
                 panel.style.display = 'block';
             } else {
                 panel.style.display = 'none';
             }
         });
-
-        // HTML转义函数
-        function escapeHtml(unsafe) {
-            return unsafe.replace(/[&<>"]/g, function(m) {
-                if (m === '&') return '&amp;';
-                if (m === '<') return '&lt;';
-                if (m === '>') return '&gt;';
-                if (m === '"') return '&quot;';
-                return m;
-            });
-        }
 
         console.log('世界书前端生成器已启动，浮动按钮已添加。');
     }
