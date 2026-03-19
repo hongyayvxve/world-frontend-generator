@@ -1,9 +1,9 @@
 // world-frontend-generator/index.js
-// 文件上传模式（按钮触发，确保点击有效）
+// 超级兼容版 v2：支持 entries 对象 + originalData 数组
 // 暗色简约风格
 
 (function() {
-    console.log('世界书前端生成器（文件上传版）加载中...');
+    console.log('世界书前端生成器（超级兼容版v2）加载中...');
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
@@ -119,7 +119,7 @@
                 panel.style.display = 'none';
             });
 
-            // 文件选择按钮：点击时触发隐藏的文件输入
+            // 文件选择逻辑
             const fileButton = document.getElementById('wfg-file-button');
             const fileInput = document.getElementById('wfg-file-input');
             const fileNameSpan = document.getElementById('wfg-file-name');
@@ -152,48 +152,95 @@
                 reader.onload = (e) => {
                     try {
                         const json = JSON.parse(e.target.result);
-                        console.log('解析的JSON:', json);
+                        console.log('解析的JSON原始对象:', json);
 
-                        // 提取条目
+                        // ===== 智能提取条目数组 =====
                         let entries = [];
+
+                        // 情况1：直接是数组
                         if (Array.isArray(json)) {
                             entries = json;
-                        } else if (json.entries && Array.isArray(json.entries)) {
+                        }
+                        // 情况2：有 entries 字段且为数组
+                        else if (json.entries && Array.isArray(json.entries)) {
                             entries = json.entries;
-                        } else if (json.data && Array.isArray(json.data)) {
+                        }
+                        // 情况2b：有 entries 字段且为对象（比如 {0:{...}, 1:{...}}）
+                        else if (json.entries && typeof json.entries === 'object') {
+                            entries = Object.values(json.entries);
+                        }
+                        // 情况3：有 originalData 字段且 originalData.entries 是数组
+                        else if (json.originalData && Array.isArray(json.originalData.entries)) {
+                            entries = json.originalData.entries;
+                        }
+                        // 情况4：有 data 字段且为数组
+                        else if (json.data && Array.isArray(json.data)) {
                             entries = json.data;
-                        } else {
+                        }
+                        // 情况5：有 list 字段且为数组
+                        else if (json.list && Array.isArray(json.list)) {
+                            entries = json.list;
+                        }
+                        // 情况6：有 worldInfoEntries 字段且为数组
+                        else if (json.worldInfoEntries && Array.isArray(json.worldInfoEntries)) {
+                            entries = json.worldInfoEntries;
+                        }
+                        // 情况7：对象的值可能是条目（如 { "1": {...}, "2": {...} }）
+                        else {
                             const values = Object.values(json);
-                            if (values.length > 0 && values[0]?.keys) {
+                            // 检查第一个值是否看起来像条目（有keys或content）
+                            if (values.length > 0 && values[0] && (values[0].keys || values[0].content)) {
                                 entries = values;
                             }
                         }
 
+                        console.log('提取到的条目数组:', entries);
+                        console.log('条目数量:', entries.length);
+
                         if (entries.length === 0) {
-                            setStatus('未找到条目，请检查JSON格式', 'error');
+                            setStatus('未找到条目，请检查JSON格式。控制台已输出原始对象', 'error');
                             return;
                         }
 
+                        // 提取关键词
                         const items = [];
-                        entries.forEach(entry => {
-                            if (entry.keys && Array.isArray(entry.keys) && entry.keys.length > 0) {
+                        entries.forEach((entry, index) => {
+                            // 兼容不同字段名：keys / key / keywords / tags
+                            let keyArray = [];
+                            if (Array.isArray(entry.keys)) {
+                                keyArray = entry.keys;
+                            } else if (Array.isArray(entry.key)) {
+                                keyArray = entry.key;
+                            } else if (Array.isArray(entry.keywords)) {
+                                keyArray = entry.keywords;
+                            } else if (Array.isArray(entry.tags)) {
+                                keyArray = entry.tags;
+                            } else if (typeof entry.keys === 'string') {
+                                keyArray = [entry.keys];
+                            } else if (typeof entry.key === 'string') {
+                                keyArray = [entry.key];
+                            }
+
+                            if (keyArray.length > 0) {
                                 items.push({
-                                    keys: entry.keys.join(', '),
-                                    content: entry.content || ''
+                                    keys: keyArray.join(', '),
+                                    content: entry.content || entry.entry || entry.text || ''
                                 });
                             }
                         });
 
                         if (items.length === 0) {
-                            setStatus('未找到关键词，请检查条目是否有keys字段', 'warning');
+                            setStatus('未找到关键词，请检查条目中是否有 keys/content 等字段', 'warning');
                             return;
                         }
 
+                        // 获取世界书名称
                         let bookName = document.getElementById('wfg-book-name').value.trim();
                         if (!bookName) {
                             bookName = file.name.replace(/\.json$/, '');
                         }
 
+                        // 生成HTML卡片
                         let generated = `
                             <div style="font-family:system-ui; padding:12px; background:${colors.bg}; border-radius:8px;">
                                 <h4 style="margin:0 0 10px 0; font-size:14px; color:${colors.text};">世界书条目：${escapeHtml(bookName)}</h4>
@@ -215,6 +262,7 @@
                         document.getElementById('wfg-preview').innerHTML = generated;
                         setStatus(`✅ 已生成 ${items.length} 个卡片`, 'success');
 
+                        // 存入变量
                         const context = window.SillyTavern?.getContext?.();
                         if (context && context.executeSlashCommands) {
                             const escaped = JSON.stringify(generated);
@@ -275,6 +323,6 @@
                 .replace(/'/g, '&#039;');
         }
 
-        console.log('世界书前端生成器（文件上传版）已启动，浮动按钮已添加。');
+        console.log('世界书前端生成器（超级兼容版v2）已启动，浮动按钮已添加。');
     }
 })();
