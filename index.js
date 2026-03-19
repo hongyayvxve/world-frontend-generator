@@ -1,159 +1,129 @@
-import { getContext } from '../../../extensions.js';
-import { registerExtension, saveSettings, loadSettings } from '../../../script.js';
+// world-frontend-generator/index.js
+// 强制浮动面板版本，不依赖酒馆特定容器
 
-const extensionName = 'world-frontend-generator';
+(function() {
+    console.log('世界书前端生成器加载中...');
 
-// 默认设置
-let settings = {
-    selectedBookId: '',
-    mode: 'manual' // 'manual' 或 'auto'
-};
-
-// 存储最新生成的HTML
-let lastGeneratedHTML = '';
-
-// 注册扩展
-registerExtension(extensionName, { chat: handleChat }, { render: renderExtension });
-
-// 渲染扩展界面
-function renderExtension() {
-    loadSettings();
-
-    // 尝试将面板渲染到扩展菜单中
-    const targetContainer = $('#extensions_settings');
-    if (targetContainer.length) {
-        // 如果扩展菜单容器存在，直接追加到里面
-        renderPanel(targetContainer);
+    // 等待 DOM 加载完成
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
     } else {
-        // 否则，在聊天栏上方创建一个按钮，点击后弹出浮动面板
-        addFloatingButton();
+        init();
     }
-}
 
-// 渲染完整面板到指定容器
-function renderPanel(container) {
-    const context = getContext();
-    let worldInfoBooks = context.worldInfo?.books || window.world_info || [];
-    if (!Array.isArray(worldInfoBooks)) worldInfoBooks = [];
+    function init() {
+        // 如果已经存在，先移除旧的
+        if (document.getElementById('wfg-float-container')) return;
 
-    let options = '<option value="">请选择世界书</option>';
-    worldInfoBooks.forEach(book => {
-        const bookId = book.id || book.name;
-        const selected = (bookId === settings.selectedBookId) ? 'selected' : '';
-        options += `<option value="${bookId}" ${selected}>${book.name}</option>`;
-    });
+        // 创建悬浮按钮
+        const btn = document.createElement('div');
+        btn.id = 'wfg-toggle-btn';
+        btn.innerHTML = '📚 世界书前端';
+        Object.assign(btn.style, {
+            position: 'fixed',
+            bottom: '120px',
+            right: '20px',
+            backgroundColor: '#4a90e2',
+            color: 'white',
+            padding: '10px 16px',
+            borderRadius: '30px',
+            cursor: 'pointer',
+            zIndex: '10001',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+            fontFamily: 'Arial, sans-serif',
+            fontWeight: 'bold',
+            userSelect: 'none'
+        });
+        document.body.appendChild(btn);
 
-    const html = `
-        <div id="world-frontend-settings" style="margin: 10px 0; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">
-            <h3 style="margin-top:0;">世界书前端生成器</h3>
-            <div style="margin-bottom: 10px;">
-                <label style="display:block; margin-bottom:5px;">选择世界书：</label>
-                <select id="world-book-select" style="width:100%; padding:5px;">${options}</select>
-            </div>
-            <div style="margin-bottom: 10px;">
-                <button id="generate-frontend-btn" class="menu_button">一键生成前端 HTML</button>
-                <button id="copy-html-btn" class="menu_button">复制 HTML</button>
-            </div>
-            <div id="preview-area" style="
-                margin-top:10px;
-                max-height:200px;
-                overflow:auto;
-                border:1px solid #ccc;
-                padding:8px;
-                background:#f9f9f9;
-                font-size:12px;
-            ">预览区域</div>
-            <div id="status-msg" style="margin-top:8px; color:#28a745;"></div>
-        </div>
-    `;
-    container.append(html);
+        // 创建浮动面板（初始隐藏）
+        const panel = document.createElement('div');
+        panel.id = 'wfg-float-panel';
+        Object.assign(panel.style, {
+            position: 'fixed',
+            bottom: '180px',
+            right: '20px',
+            width: '340px',
+            maxHeight: '500px',
+            overflowY: 'auto',
+            backgroundColor: 'white',
+            border: '2px solid #4a90e2',
+            borderRadius: '10px',
+            padding: '16px',
+            zIndex: '10002',
+            boxShadow: '0 6px 16px rgba(0,0,0,0.25)',
+            display: 'none',
+            fontFamily: 'Arial, sans-serif'
+        });
+        document.body.appendChild(panel);
 
-    // 绑定事件
-    $('#world-book-select').on('change', function() {
-        settings.selectedBookId = $(this).val();
-        saveSettings();
-    });
+        // 获取世界书数据
+        function getWorldBooks() {
+            const context = window.SillyTavern?.getContext?.() || window;
+            return context.worldInfo?.books || window.world_info || [];
+        }
 
-    $('#generate-frontend-btn').on('click', generateFrontend);
-    $('#copy-html-btn').on('click', copyHTML);
-}
-
-// 在聊天栏上方添加浮动按钮
-function addFloatingButton() {
-    const buttonHtml = `
-        <div id="world-frontend-toggle" style="display:inline-block; margin-left:10px;">
-            <button class="menu_button" style="background:#4a90e2; color:white;">世界书前端</button>
-        </div>
-    `;
-    // 将按钮添加到聊天栏上方（通常有 .send_form 或 .bottom_controls）
-    $('.send_form').prepend(buttonHtml);
-
-    let panelVisible = false;
-    let panel = null;
-
-    $('#world-frontend-toggle button').on('click', function() {
-        if (!panelVisible) {
-            // 创建浮动面板
-            const context = getContext();
-            let worldInfoBooks = context.worldInfo?.books || window.world_info || [];
-            if (!Array.isArray(worldInfoBooks)) worldInfoBooks = [];
-
+        // 渲染面板内容
+        function renderPanel() {
+            const books = getWorldBooks();
             let options = '<option value="">请选择世界书</option>';
-            worldInfoBooks.forEach(book => {
+            books.forEach(book => {
                 const bookId = book.id || book.name;
                 options += `<option value="${bookId}">${book.name}</option>`;
             });
 
-            panel = $(`
-                <div id="world-frontend-float" style="
-                    position: fixed;
-                    bottom: 100px;
-                    right: 20px;
-                    width: 300px;
-                    background: white;
-                    border: 2px solid #4a90e2;
-                    border-radius: 8px;
-                    padding: 15px;
-                    z-index: 10000;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                ">
-                    <h3 style="margin-top:0;">世界书前端生成器</h3>
-                    <div style="margin-bottom:10px;">
-                        <label>选择世界书：</label>
-                        <select id="float-world-book-select" style="width:100%; padding:5px;">${options}</select>
-                    </div>
-                    <div>
-                        <button id="float-generate-btn" class="menu_button">生成</button>
-                        <button id="float-copy-btn" class="menu_button">复制</button>
-                        <button id="float-close-btn" class="menu_button" style="float:right;">关闭</button>
-                    </div>
-                    <div id="float-preview" style="
-                        margin-top:10px;
-                        max-height:150px;
-                        overflow:auto;
-                        border:1px solid #ccc;
-                        padding:5px;
-                        background:#f9f9f9;
-                    ">预览</div>
-                    <div id="float-status" style="margin-top:5px; font-size:12px;"></div>
+            panel.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <h3 style="margin:0;">世界书前端生成器</h3>
+                    <span id="wfg-close" style="cursor:pointer; font-size:20px;">&times;</span>
                 </div>
-            `).appendTo('body');
+                <div style="margin-bottom:12px;">
+                    <label style="display:block; margin-bottom:5px;">选择世界书：</label>
+                    <select id="wfg-select" style="width:100%; padding:6px;">${options}</select>
+                </div>
+                <div style="margin-bottom:12px;">
+                    <button id="wfg-generate" style="padding:8px 12px; background:#4a90e2; color:white; border:none; border-radius:5px; cursor:pointer; margin-right:8px;">生成前端 HTML</button>
+                    <button id="wfg-copy" style="padding:8px 12px; background:#6c757d; color:white; border:none; border-radius:5px; cursor:pointer;">复制 HTML</button>
+                </div>
+                <div id="wfg-preview" style="
+                    border:1px solid #ccc;
+                    border-radius:5px;
+                    padding:8px;
+                    max-height:200px;
+                    overflow:auto;
+                    background:#f9f9f9;
+                    font-size:12px;
+                ">预览区域</div>
+                <div id="wfg-status" style="margin-top:8px; color:#28a745; font-size:12px;"></div>
+            `;
 
-            // 绑定浮动面板事件
-            $('#float-generate-btn').on('click', function() {
-                const selectedId = $('#float-world-book-select').val();
+            // 绑定事件
+            document.getElementById('wfg-close').addEventListener('click', () => {
+                panel.style.display = 'none';
+            });
+
+            let lastHTML = '';
+
+            document.getElementById('wfg-generate').addEventListener('click', () => {
+                const select = document.getElementById('wfg-select');
+                const selectedId = select.value;
                 if (!selectedId) {
-                    $('#float-status').text('请选择世界书').css('color', 'red');
-                    return;
-                }
-                const selectedBook = worldInfoBooks.find(book => (book.id || book.name) === selectedId);
-                if (!selectedBook || !selectedBook.entries) {
-                    $('#float-status').text('未找到世界书条目').css('color', 'red');
+                    document.getElementById('wfg-status').innerText = '请选择世界书';
+                    document.getElementById('wfg-status').style.color = 'red';
                     return;
                 }
 
+                const books = getWorldBooks();
+                const book = books.find(b => (b.id || b.name) === selectedId);
+                if (!book || !book.entries) {
+                    document.getElementById('wfg-status').innerText = '未找到世界书条目';
+                    document.getElementById('wfg-status').style.color = 'red';
+                    return;
+                }
+
+                // 提取关键词
                 const items = [];
-                selectedBook.entries.forEach(entry => {
+                book.entries.forEach(entry => {
                     if (entry.keys && entry.keys.length > 0) {
                         items.push({
                             keys: entry.keys.join(', '),
@@ -163,182 +133,82 @@ function addFloatingButton() {
                 });
 
                 if (items.length === 0) {
-                    $('#float-status').text('该世界书没有关键词').css('color', 'orange');
+                    document.getElementById('wfg-status').innerText = '该世界书没有关键词';
+                    document.getElementById('wfg-status').style.color = 'orange';
                     return;
                 }
 
+                // 生成HTML卡片
                 let generated = `
-                    <div class="world-frontend-container" style="font-family: Arial, sans-serif; padding: 10px; background: #f9f9f9; border-radius: 8px;">
-                        <h3 style="margin-top:0;">世界书条目：${selectedBook.name}</h3>
-                        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    <div style="font-family:Arial,sans-serif; padding:10px; background:#f9f9f9; border-radius:8px;">
+                        <h3 style="margin-top:0;">世界书条目：${escapeHtml(book.name)}</h3>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px;">
                 `;
                 items.forEach(item => {
                     const safeKeys = escapeHtml(item.keys);
                     const safeContent = escapeHtml(item.content.substring(0, 100) + (item.content.length > 100 ? '...' : ''));
                     generated += `
-                        <div style="background: white; border: 1px solid #ddd; border-radius: 6px; padding: 8px 12px; max-width: 200px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                            <div style="font-weight: bold; color: #2c3e50;">${safeKeys}</div>
-                            <div style="font-size: 0.9em; color: #555; margin-top: 4px;">${safeContent}</div>
+                        <div style="background:white; border:1px solid #ddd; border-radius:6px; padding:8px 12px; max-width:200px; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
+                            <div style="font-weight:bold; color:#2c3e50;">${safeKeys}</div>
+                            <div style="font-size:0.9em; color:#555; margin-top:4px;">${safeContent}</div>
                         </div>
                     `;
                 });
                 generated += `</div></div>`;
 
-                lastGeneratedHTML = generated;
-                $('#float-preview').html(generated);
-                $('#float-status').text(`已生成 ${items.length} 个卡片`).css('color', 'green');
+                lastHTML = generated;
+                document.getElementById('wfg-preview').innerHTML = generated;
+                document.getElementById('wfg-status').innerText = `已生成 ${items.length} 个卡片`;
+                document.getElementById('wfg-status').style.color = 'green';
 
-                const escaped = JSON.stringify(generated);
-                if (context.executeSlashCommands) {
+                // 存入变量
+                const context = window.SillyTavern?.getContext?.();
+                if (context && context.executeSlashCommands) {
+                    const escaped = JSON.stringify(generated);
                     context.executeSlashCommands(`/setvar key=world_frontend_html value=${escaped}`);
                 } else {
-                    window.SillyTavern?.getContext?.()?.variables?.world_frontend_html = generated;
+                    // 降级：直接设置全局变量
+                    window.world_frontend_html = generated;
                 }
             });
 
-            $('#float-copy-btn').on('click', function() {
-                if (!lastGeneratedHTML) {
-                    $('#float-status').text('无内容可复制').css('color', 'red');
+            document.getElementById('wfg-copy').addEventListener('click', () => {
+                if (!lastHTML) {
+                    document.getElementById('wfg-status').innerText = '没有可复制的内容';
+                    document.getElementById('wfg-status').style.color = 'red';
                     return;
                 }
-                navigator.clipboard.writeText(lastGeneratedHTML).then(() => {
-                    $('#float-status').text('已复制').css('color', 'green');
+                navigator.clipboard.writeText(lastHTML).then(() => {
+                    document.getElementById('wfg-status').innerText = '已复制到剪贴板';
+                    document.getElementById('wfg-status').style.color = 'green';
                 }).catch(() => {
-                    $('#float-status').text('复制失败').css('color', 'red');
+                    document.getElementById('wfg-status').innerText = '复制失败';
+                    document.getElementById('wfg-status').style.color = 'red';
                 });
             });
-
-            $('#float-close-btn').on('click', function() {
-                panel.remove();
-                panelVisible = false;
-                panel = null;
-            });
-
-            panelVisible = true;
-        } else {
-            panel.remove();
-            panelVisible = false;
-            panel = null;
         }
-    });
-}
 
-// 生成前端HTML（供扩展菜单版使用）
-function generateFrontend() {
-    const context = getContext();
-    const selectedBookId = $('#world-book-select').val();
-    if (!selectedBookId) {
-        showStatus('请先选择一本世界书', 'red');
-        return;
-    }
-
-    let worldInfoBooks = context.worldInfo?.books || window.world_info || [];
-    const selectedBook = worldInfoBooks.find(book => (book.id || book.name) === selectedBookId);
-
-    if (!selectedBook || !selectedBook.entries) {
-        showStatus('未找到世界书条目', 'red');
-        return;
-    }
-
-    const items = [];
-    selectedBook.entries.forEach(entry => {
-        if (entry.keys && entry.keys.length > 0) {
-            items.push({
-                keys: entry.keys.join(', '),
-                content: entry.content || ''
-            });
-        }
-    });
-
-    if (items.length === 0) {
-        showStatus('该世界书没有关键词', 'orange');
-        return;
-    }
-
-    let generated = `
-        <div class="world-frontend-container" style="font-family: Arial, sans-serif; padding: 10px; background: #f9f9f9; border-radius: 8px;">
-            <h3 style="margin-top:0;">世界书条目：${selectedBook.name}</h3>
-            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-    `;
-    items.forEach(item => {
-        const safeKeys = escapeHtml(item.keys);
-        const safeContent = escapeHtml(item.content.substring(0, 100) + (item.content.length > 100 ? '...' : ''));
-        generated += `
-            <div style="background: white; border: 1px solid #ddd; border-radius: 6px; padding: 8px 12px; max-width: 200px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                <div style="font-weight: bold; color: #2c3e50;">${safeKeys}</div>
-                <div style="font-size: 0.9em; color: #555; margin-top: 4px;">${safeContent}</div>
-            </div>
-        `;
-    });
-    generated += `</div></div>`;
-
-    lastGeneratedHTML = generated;
-    $('#preview-area').html(generated);
-    showStatus(`已生成 ${items.length} 个卡片，并存入变量 world_frontend_html`, 'green');
-
-    const escaped = JSON.stringify(generated);
-    context.executeSlashCommands(`/setvar key=world_frontend_html value=${escaped}`);
-}
-
-// 复制HTML（供扩展菜单版使用）
-function copyHTML() {
-    if (!lastGeneratedHTML) {
-        showStatus('没有可复制的内容', 'red');
-        return;
-    }
-    navigator.clipboard.writeText(lastGeneratedHTML).then(() => {
-        showStatus('HTML 已复制到剪贴板', 'green');
-    }).catch(() => {
-        showStatus('复制失败', 'red');
-    });
-}
-
-// 显示状态信息
-function showStatus(msg, color) {
-    $('#status-msg').text(msg).css('color', color || '#333');
-    setTimeout(() => $('#status-msg').text(''), 3000);
-}
-
-// HTML转义
-function escapeHtml(unsafe) {
-    return unsafe.replace(/[&<>"]/g, function(m) {
-        if (m === '&') return '&amp;';
-        if (m === '<') return '&lt;';
-        if (m === '>') return '&gt;';
-        if (m === '"') return '&quot;';
-        return m;
-    });
-}
-
-// 处理聊天消息（自动响应指令）
-function handleChat(data) {
-    if (settings.mode !== 'auto') return;
-
-    const userMessage = data?.message;
-    if (typeof userMessage === 'string' && userMessage.trim().startsWith('/genfront')) {
-        generateFrontend();
-        setTimeout(() => {
-            if (lastGeneratedHTML) {
-                const textarea = $('#send_textarea');
-                const currentText = textarea.val();
-                const macro = '{{getvar::world_frontend_html}}';
-                if (!currentText.includes(macro)) {
-                    textarea.val(currentText + ' ' + macro);
-                }
+        // 点击按钮切换面板
+        btn.addEventListener('click', () => {
+            if (panel.style.display === 'none' || panel.style.display === '') {
+                renderPanel(); // 每次打开时重新渲染（确保数据最新）
+                panel.style.display = 'block';
+            } else {
+                panel.style.display = 'none';
             }
-        }, 500);
-    }
-}
+        });
 
-// 保存/加载设置
-export function onSettingsChange() {
-    saveSettings();
-}
-export function loadSettings() {
-    const loaded = window.SillyTavern?.settings?.extensions?.[extensionName];
-    if (loaded) settings = loaded;
-}
-export function saveSettings() {
-    window.SillyTavern.settings.extensions[extensionName] = settings;
-    saveSettings();
-}
+        // HTML转义函数
+        function escapeHtml(unsafe) {
+            return unsafe.replace(/[&<>"]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                if (m === '"') return '&quot;';
+                return m;
+            });
+        }
+
+        console.log('世界书前端生成器已启动，浮动按钮已添加。');
+    }
+})();
