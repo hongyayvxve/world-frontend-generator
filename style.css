@@ -1,0 +1,26 @@
+#world-frontend-settings h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+}
+#world-frontend-settings .setting-item {
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+}
+#world-frontend-settings .setting-label {
+    width: 120px;
+    font-weight: bold;
+}
+#world-frontend-settings .setting-control {
+    flex: 1;
+}
+#world-frontend-settings button {
+    margin-right: 8px;
+}
+#preview-area {
+    background-color: #f5f5f5;
+    border-radius: 5px;
+    font-family: monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+}

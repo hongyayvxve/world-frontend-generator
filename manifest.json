@@ -1,0 +1,12 @@
+{
+    "display_name": "世界书剧情前端生成器",
+    "loading_order": 10,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "settings": "settings.html",
+    "author": "你的名字",
+    "version": "1.0.0",
+    "homePage": ""
+}
