@@ -1,5 +1,5 @@
 // world-frontend-generator/index.js
-// 文件上传模式：直接上传世界书JSON文件
+// 文件上传模式（按钮触发，确保点击有效）
 // 暗色简约风格
 
 (function() {
@@ -78,7 +78,7 @@
         });
         document.body.appendChild(panel);
 
-        // ================== 渲染面板（文件上传界面） ==================
+        // ================== 渲染面板 ==================
         function renderPanel() {
             panel.innerHTML = `
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
@@ -87,11 +87,15 @@
                 </div>
                 <div style="margin-bottom:16px;">
                     <label style="display:block; margin-bottom:6px; color:${colors.textMuted};">📁 上传世界书JSON文件</label>
-                    <input type="file" id="wfg-file-input" accept=".json" style="width:100%; padding:6px; background-color:${colors.bg}; border:1px solid ${colors.border}; border-radius:6px; color:${colors.text}; font-size:13px;">
+                    <div style="display:flex; gap:8px;">
+                        <button id="wfg-file-button" style="flex:1; padding:8px 12px; background-color:${colors.bg}; border:1px solid ${colors.border}; border-radius:6px; color:${colors.text}; cursor:pointer; text-align:center;">选择文件</button>
+                        <span id="wfg-file-name" style="flex:2; padding:8px 0; color:${colors.textMuted}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">未选择任何文件</span>
+                    </div>
+                    <input type="file" id="wfg-file-input" accept=".json" style="display:none;">
                 </div>
                 <div style="margin-bottom:16px;">
-                    <label style="display:block; margin-bottom:6px; color:${colors.textMuted};">📖 世界书名称（可选，留空则用文件名）</label>
-                    <input type="text" id="wfg-book-name" placeholder="例如：XP_v1.2" style="width:100%; padding:8px 10px; background-color:${colors.bg}; border:1px solid ${colors.border}; border-radius:6px; color:${colors.text}; font-size:13px; box-sizing:border-box;">
+                    <label style="display:block; margin-bottom:6px; color:${colors.textMuted};">📖 世界书名称（可选）</label>
+                    <input type="text" id="wfg-book-name" placeholder="留空则用文件名" style="width:100%; padding:8px 10px; background-color:${colors.bg}; border:1px solid ${colors.border}; border-radius:6px; color:${colors.text}; font-size:13px; box-sizing:border-box;">
                 </div>
                 <div style="display:flex; gap:8px; margin-bottom:16px;">
                     <button id="wfg-generate" style="flex:1; padding:8px 12px; background-color:${colors.accent}; border:none; border-radius:6px; color:white; font-weight:500; cursor:pointer; transition:background-color 0.2s;">✨ 解析并生成</button>
@@ -115,11 +119,29 @@
                 panel.style.display = 'none';
             });
 
+            // 文件选择按钮：点击时触发隐藏的文件输入
+            const fileButton = document.getElementById('wfg-file-button');
+            const fileInput = document.getElementById('wfg-file-input');
+            const fileNameSpan = document.getElementById('wfg-file-name');
+
+            fileButton.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if (fileInput.files.length > 0) {
+                    fileNameSpan.textContent = fileInput.files[0].name;
+                    fileNameSpan.style.color = colors.text;
+                } else {
+                    fileNameSpan.textContent = '未选择任何文件';
+                    fileNameSpan.style.color = colors.textMuted;
+                }
+            });
+
             let lastHTML = '';
 
             // 生成按钮事件
             document.getElementById('wfg-generate').addEventListener('click', () => {
-                const fileInput = document.getElementById('wfg-file-input');
                 const file = fileInput.files[0];
                 if (!file) {
                     setStatus('请先选择JSON文件', 'error');
@@ -132,7 +154,7 @@
                         const json = JSON.parse(e.target.result);
                         console.log('解析的JSON:', json);
 
-                        // 提取条目（兼容不同格式）
+                        // 提取条目
                         let entries = [];
                         if (Array.isArray(json)) {
                             entries = json;
@@ -141,7 +163,6 @@
                         } else if (json.data && Array.isArray(json.data)) {
                             entries = json.data;
                         } else {
-                            // 尝试对象的值
                             const values = Object.values(json);
                             if (values.length > 0 && values[0]?.keys) {
                                 entries = values;
@@ -153,7 +174,6 @@
                             return;
                         }
 
-                        // 提取关键词
                         const items = [];
                         entries.forEach(entry => {
                             if (entry.keys && Array.isArray(entry.keys) && entry.keys.length > 0) {
@@ -169,13 +189,11 @@
                             return;
                         }
 
-                        // 获取世界书名称（优先使用输入框，否则用文件名）
                         let bookName = document.getElementById('wfg-book-name').value.trim();
                         if (!bookName) {
                             bookName = file.name.replace(/\.json$/, '');
                         }
 
-                        // 生成HTML卡片
                         let generated = `
                             <div style="font-family:system-ui; padding:12px; background:${colors.bg}; border-radius:8px;">
                                 <h4 style="margin:0 0 10px 0; font-size:14px; color:${colors.text};">世界书条目：${escapeHtml(bookName)}</h4>
@@ -197,7 +215,6 @@
                         document.getElementById('wfg-preview').innerHTML = generated;
                         setStatus(`✅ 已生成 ${items.length} 个卡片`, 'success');
 
-                        // 存入变量 world_frontend_html
                         const context = window.SillyTavern?.getContext?.();
                         if (context && context.executeSlashCommands) {
                             const escaped = JSON.stringify(generated);
@@ -226,7 +243,6 @@
                 });
             });
 
-            // 辅助函数：设置状态信息
             function setStatus(msg, type = 'info') {
                 const el = document.getElementById('wfg-status');
                 if (!el) return;
@@ -240,7 +256,6 @@
             }
         }
 
-        // ================== 点击按钮切换面板 ==================
         btn.addEventListener('click', () => {
             if (panel.style.display === 'none' || panel.style.display === '') {
                 renderPanel();
@@ -250,7 +265,6 @@
             }
         });
 
-        // HTML转义函数
         function escapeHtml(unsafe) {
             if (!unsafe) return '';
             return unsafe
